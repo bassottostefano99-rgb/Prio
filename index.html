@@ -571,36 +571,32 @@
       <label class="form-label">Beschreibung</label>
       <textarea class="form-textarea" id="f-desc" placeholder="Details…" rows="2"></textarea>
     </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Fällig am</label>
-        <input class="form-input" id="f-date" type="date" />
-      </div>
-      <div class="form-group">
-        <label class="form-label">Priorität</label>
-        <select class="form-select" id="f-priority">
-          <option value="low">Niedrig</option>
-          <option value="medium" selected>Mittel</option>
-          <option value="high">Hoch</option>
-          <option value="urgent">Dringend</option>
-        </select>
-      </div>
+    <div class="form-group">
+      <label class="form-label">Fällig am</label>
+      <input class="form-input" id="f-date" type="date" />
     </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Bereich</label>
-        <select class="form-select" id="f-area">
-          <option value="inbox" selected>Inbox</option>
-          <option value="work">Arbeit</option>
-          <option value="personal">Persönlich</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Projekt</label>
-        <select class="form-select" id="f-project">
-          <option value="">Keins</option>
-        </select>
-      </div>
+    <div class="form-group">
+      <label class="form-label">Priorität</label>
+      <select class="form-select" id="f-priority">
+        <option value="low">Niedrig</option>
+        <option value="medium" selected>Mittel</option>
+        <option value="high">Hoch</option>
+        <option value="urgent">Dringend</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Bereich</label>
+      <select class="form-select" id="f-area">
+        <option value="inbox" selected>Inbox</option>
+        <option value="work">Arbeit</option>
+        <option value="personal">Persönlich</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Projekt</label>
+      <select class="form-select" id="f-project">
+        <option value="">Keins</option>
+      </select>
     </div>
     <input type="hidden" id="f-id" />
     <button class="btn-submit" onclick="saveTask()">Speichern</button>
@@ -776,13 +772,14 @@ async function dbDeleteProject(id) {
 }
 async function dbSyncProfile() {
   if (!sb || !currentUser) return;
-  const { error } = await sb.from('profiles').update({
+  const { error } = await sb.from('profiles').upsert({
+    id:           currentUser.id,
     display_name: state.profileName || null,
     avatar_url:   state.profileEmoji || null,
     xp:           state.xp,
     streak_days:  state.streak,
     last_activity_date: state.lastDate || null,
-  }).eq('id', currentUser.id);
+  }, { onConflict: 'id' });
   if (error) console.warn('[db] profile sync:', error.message);
 
   // sync badges
