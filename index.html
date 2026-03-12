@@ -1,0 +1,1583 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#C8102E" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Prio" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <title>Prio</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+
+  <style>
+    /* ── Reset & Base ─────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --red:        #C8102E;
+      --red-light:  #FDEAED;
+      --red-dark:   #A00D25;
+      --white:      #FFFFFF;
+      --bg:         #F7F7F7;
+      --surface:    #FFFFFF;
+      --border:     #ECECEC;
+      --text:       #1A1A1A;
+      --text-2:     #6B6B6B;
+      --text-3:     #ADADAD;
+      --green:      #12A150;
+      --amber:      #D97706;
+      --safe-top:   env(safe-area-inset-top, 0px);
+      --safe-bot:   env(safe-area-inset-bottom, 0px);
+    }
+    html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); overscroll-behavior: none; touch-action: pan-x pan-y; }
+    body { display: flex; flex-direction: column; max-width: 430px; margin: 0 auto; min-height: 100dvh; position: relative; }
+
+    /* ── Fullscreen overlays ──────────────────────────────── */
+    .fullscreen {
+      position: fixed; inset: 0; z-index: 400;
+      background: var(--bg); display: none;
+      flex-direction: column; align-items: center; justify-content: center;
+      padding: calc(var(--safe-top) + 24px) 24px calc(var(--safe-bot) + 24px);
+      max-width: 430px; margin: 0 auto;
+    }
+    .fullscreen.show { display: flex; }
+    .auth-box { max-width: 380px; width: 100%; }
+    .auth-logo { font-size: 32px; font-weight: 700; margin-bottom: 4px; }
+    .auth-logo span { color: var(--red); }
+    .auth-sub { font-size: 15px; color: var(--text-2); margin-bottom: 28px; line-height: 1.5; }
+    .auth-error {
+      margin-top: 10px; padding: 10px 12px; background: var(--red-light);
+      border-radius: 8px; font-size: 13px; color: var(--red); display: none;
+    }
+    .auth-error.show { display: block; }
+    .btn-ghost {
+      width: 100%; height: 44px; background: none;
+      border: 1px solid var(--border); border-radius: 12px;
+      font-size: 14px; color: var(--text-2); cursor: pointer;
+      font-family: inherit; margin-top: 10px; transition: background .15s;
+    }
+    .btn-ghost:active { background: var(--border); }
+    .btn-link {
+      border: none; background: none; color: var(--red);
+      font-weight: 600; cursor: pointer; font-size: 14px;
+      font-family: inherit; padding-left: 4px; text-decoration: underline;
+    }
+    .spinner {
+      width: 36px; height: 36px; border-radius: 50%;
+      border: 3px solid var(--border); border-top-color: var(--red);
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    /* ── Header ───────────────────────────────────────────── */
+    .header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: calc(var(--safe-top) + 12px) 16px 12px;
+      display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0; z-index: 100;
+    }
+    .header-title { font-size: 22px; font-weight: 700; letter-spacing: -0.4px; display: flex; align-items: center; gap: 6px; }
+    .header-title span { color: var(--red); }
+    .sync-dot {
+      width: 7px; height: 7px; border-radius: 50%; background: var(--green);
+      display: none; flex-shrink: 0;
+    }
+    .sync-dot.syncing { background: var(--amber); animation: pulse .8s ease-in-out infinite; }
+    .sync-dot.err { background: var(--red); }
+    .btn-add {
+      width: 36px; height: 36px; border-radius: 50%; background: var(--red);
+      border: none; cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: background .15s;
+    }
+    .btn-add:active { background: var(--red-dark); }
+    .btn-add svg { width: 20px; height: 20px; }
+
+    /* ── Nav ──────────────────────────────────────────────── */
+    .nav {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      display: flex;
+      position: sticky; bottom: 0; z-index: 100;
+      padding-bottom: var(--safe-bot);
+    }
+    .nav-btn {
+      flex: 1; border: none; background: none; cursor: pointer;
+      padding: 10px 4px 8px; display: flex; flex-direction: column;
+      align-items: center; gap: 3px; color: var(--text-3); transition: color .15s;
+    }
+    .nav-btn.active { color: var(--red); }
+    .nav-btn svg { width: 22px; height: 22px; }
+    .nav-btn span { font-size: 10px; font-weight: 500; }
+
+    /* ── Content ──────────────────────────────────────────── */
+    .content { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+
+    /* ── Views ────────────────────────────────────────────── */
+    .view { display: none; flex-direction: column; gap: 12px; }
+    .view.active { display: flex; }
+
+    /* ── Section label ────────────────────────────────────── */
+    .section-label {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 1px; color: var(--text-3); padding: 0 2px;
+    }
+
+    /* ── Summary cards (Today) ────────────────────────────── */
+    .summary-row { display: flex; gap: 10px; }
+    .summary-card {
+      flex: 1; background: var(--surface); border-radius: 14px;
+      padding: 14px; border: 1px solid var(--border);
+    }
+    .summary-card .val { font-size: 28px; font-weight: 700; color: var(--red); line-height: 1; }
+    .summary-card .lbl { font-size: 12px; color: var(--text-2); margin-top: 4px; }
+    .progress-card {
+      background: var(--surface); border-radius: 14px; padding: 14px;
+      border: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px;
+    }
+    .progress-card .row { display: flex; justify-content: space-between; align-items: center; }
+    .progress-card .lbl { font-size: 13px; font-weight: 500; color: var(--text-2); }
+    .progress-card .pct { font-size: 15px; font-weight: 700; color: var(--red); }
+    .progress-bar { height: 5px; background: var(--border); border-radius: 99px; overflow: hidden; }
+    .progress-fill { height: 100%; background: var(--red); border-radius: 99px; transition: width .4s ease; }
+
+    /* ── Task Card ────────────────────────────────────────── */
+    .task-card {
+      background: var(--surface); border-radius: 14px; border: 1px solid var(--border);
+      display: flex; overflow: hidden; transition: opacity .2s;
+    }
+    .task-card.done { opacity: .45; }
+    .task-stripe { width: 3px; flex-shrink: 0; }
+    .task-stripe.urgent { background: var(--red); }
+    .task-stripe.high   { background: #F97316; }
+    .task-stripe.medium { background: var(--amber); }
+    .task-stripe.low    { background: var(--green); }
+    .task-body { flex: 1; padding: 12px 12px 12px 12px; display: flex; gap: 10px; align-items: flex-start; }
+    .task-check {
+      width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border);
+      flex-shrink: 0; cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: all .15s; background: var(--white); margin-top: 1px;
+    }
+    .task-check:active { transform: scale(.9); }
+    .task-check.checked { background: var(--red); border-color: var(--red); }
+    .task-check.checked svg { display: block; }
+    .task-check svg { display: none; width: 12px; height: 12px; }
+    .task-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+    .task-title { font-size: 15px; font-weight: 500; line-height: 1.35; word-break: break-word; }
+    .task-card.done .task-title { text-decoration: line-through; color: var(--text-3); }
+    .task-meta { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+    .chip {
+      display: flex; align-items: center; gap: 3px; padding: 2px 7px;
+      border-radius: 6px; background: var(--bg); font-size: 11px; color: var(--text-2);
+    }
+    .chip.overdue { background: #FDEAED; color: var(--red); }
+    .chip svg { width: 11px; height: 11px; flex-shrink: 0; }
+    .priority-chip { padding: 2px 7px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+    .priority-chip.urgent { background: #FDEAED; color: var(--red); }
+    .priority-chip.high   { background: #FEF0E8; color: #F97316; }
+    .priority-chip.medium { background: #FEF9EC; color: var(--amber); }
+    .priority-chip.low    { background: #EDFBF4; color: var(--green); }
+    .task-actions { display: flex; gap: 2px; flex-shrink: 0; padding-top: 2px; }
+    .task-action-btn {
+      width: 30px; height: 30px; border: none; background: none; cursor: pointer;
+      border-radius: 8px; display: flex; align-items: center; justify-content: center;
+      color: var(--text-3); transition: all .15s;
+    }
+    .task-action-btn:hover { background: var(--bg); color: var(--text); }
+    .task-action-btn.delete:hover { color: var(--red); background: var(--red-light); }
+    .task-action-btn svg { width: 16px; height: 16px; }
+
+    /* ── Quick input ──────────────────────────────────────── */
+    .quick-add {
+      display: flex; gap: 8px; align-items: center;
+      background: var(--surface); border-radius: 14px;
+      padding: 4px 4px 4px 14px; border: 1px solid var(--border);
+    }
+    .quick-add input {
+      flex: 1; border: none; outline: none; font-size: 15px;
+      background: transparent; color: var(--text);
+      font-family: inherit; padding: 8px 0;
+    }
+    .quick-add input::placeholder { color: var(--text-3); }
+    .quick-add button {
+      width: 36px; height: 36px; border-radius: 10px; background: var(--red);
+      border: none; cursor: pointer; display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; transition: background .15s;
+    }
+    .quick-add button:active { background: var(--red-dark); }
+    .quick-add button svg { width: 18px; height: 18px; }
+    .quick-add button:disabled { background: var(--border); cursor: default; }
+
+    /* ── Empty state ──────────────────────────────────────── */
+    .empty { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 40px 0; }
+    .empty svg { width: 52px; height: 52px; color: var(--border); }
+    .empty .e-title { font-size: 15px; font-weight: 600; color: var(--text-2); }
+    .empty .e-sub   { font-size: 13px; color: var(--text-3); text-align: center; max-width: 220px; }
+
+    /* ── Project Card ─────────────────────────────────────── */
+    .project-card {
+      background: var(--surface); border-radius: 14px; padding: 14px;
+      border: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px;
+      cursor: pointer; transition: border-color .15s;
+    }
+    .project-card:active { border-color: var(--red); }
+    .project-header { display: flex; align-items: center; gap: 8px; }
+    .project-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .project-name { flex: 1; font-size: 15px; font-weight: 600; }
+    .project-count { font-size: 12px; color: var(--text-3); }
+    .project-progress-row { display: flex; align-items: center; gap: 8px; }
+    .project-bar { flex: 1; height: 4px; background: var(--border); border-radius: 99px; overflow: hidden; }
+    .project-fill { height: 100%; border-radius: 99px; transition: width .4s; }
+    .project-pct { font-size: 12px; font-weight: 600; color: var(--text-2); width: 30px; text-align: right; }
+
+    /* ── XP / Profile ─────────────────────────────────────── */
+    .profile-card {
+      background: var(--surface); border-radius: 14px; padding: 16px;
+      border: 1px solid var(--border);
+    }
+    .profile-top { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
+    .avatar {
+      width: 52px; height: 52px; border-radius: 50%; background: var(--red-light);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px; font-weight: 700; color: var(--red); flex-shrink: 0;
+    }
+    .profile-name { font-size: 17px; font-weight: 700; }
+    .profile-level { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+    .xp-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .xp-label { font-size: 13px; font-weight: 500; color: var(--text-2); }
+    .xp-value { font-size: 13px; font-weight: 700; color: var(--red); }
+    .xp-bar { height: 6px; background: var(--border); border-radius: 99px; overflow: hidden; }
+    .xp-fill { height: 100%; background: var(--red); border-radius: 99px; transition: width .4s; }
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .stat-item {
+      background: var(--bg); border-radius: 10px; padding: 12px;
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+    }
+    .stat-val { font-size: 22px; font-weight: 700; color: var(--text); }
+    .stat-val.red { color: var(--red); }
+    .stat-lbl { font-size: 11px; color: var(--text-2); text-align: center; }
+    .badges-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .badge-item { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+    .badge-icon {
+      width: 48px; height: 48px; border-radius: 12px; background: var(--red-light);
+      display: flex; align-items: center; justify-content: center; font-size: 22px;
+    }
+    .badge-icon.locked { background: var(--bg); filter: grayscale(1); opacity: .4; }
+    .badge-name { font-size: 10px; color: var(--text-2); text-align: center; font-weight: 500; }
+    .btn-signout {
+      width: 100%; height: 44px; background: none;
+      border: 1px solid var(--border); border-radius: 12px;
+      font-size: 15px; color: var(--text-2); cursor: pointer; font-family: inherit;
+    }
+    .btn-signout:active { background: var(--bg); }
+
+    /* ── Modal ────────────────────────────────────────────── */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4);
+      z-index: 200; align-items: flex-end; justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--surface); border-radius: 20px 20px 0 0;
+      width: 100%; max-width: 430px; padding: 0 16px calc(var(--safe-bot) + 16px);
+      max-height: 90dvh; overflow-y: auto;
+      animation: slideUp .25s ease;
+    }
+    @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    .modal-handle {
+      width: 36px; height: 4px; background: var(--border); border-radius: 2px;
+      margin: 12px auto 16px;
+    }
+    .modal-title { font-size: 17px; font-weight: 700; margin-bottom: 16px; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+    .form-label { font-size: 12px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: .6px; }
+    .form-input, .form-select, .form-textarea {
+      border: 1px solid var(--border); border-radius: 10px; padding: 11px 12px;
+      font-size: 15px; font-family: inherit; color: var(--text); background: var(--bg);
+      outline: none; transition: border-color .15s; width: 100%;
+    }
+    .form-input:focus, .form-select:focus, .form-textarea:focus { border-color: var(--red); background: var(--white); }
+    .form-textarea { resize: none; min-height: 70px; }
+    .form-row { display: flex; gap: 10px; }
+    .form-row .form-group { flex: 1; }
+    .btn-submit {
+      width: 100%; height: 48px; background: var(--red); color: white;
+      border: none; border-radius: 12px; font-size: 16px; font-weight: 600;
+      cursor: pointer; font-family: inherit; transition: background .15s; margin-top: 4px;
+    }
+    .btn-submit:active { background: var(--red-dark); }
+    .btn-submit:disabled { background: var(--border); cursor: default; }
+
+    /* ── Toast ────────────────────────────────────────────── */
+    .toast {
+      position: fixed; bottom: calc(var(--safe-bot) + 80px); left: 50%; transform: translateX(-50%) translateY(10px);
+      background: var(--text); color: white; padding: 10px 18px; border-radius: 10px;
+      font-size: 13px; font-weight: 500; opacity: 0; transition: all .2s;
+      pointer-events: none; white-space: nowrap; z-index: 300;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ── XP popup ─────────────────────────────────────────── */
+    .xp-popup {
+      position: fixed; top: calc(var(--safe-top) + 70px); right: 16px;
+      background: var(--red); color: white; padding: 8px 14px; border-radius: 10px;
+      font-size: 14px; font-weight: 700; opacity: 0; transform: translateY(-8px);
+      transition: all .25s; pointer-events: none; z-index: 300;
+    }
+    .xp-popup.show { opacity: 1; transform: translateY(0); }
+
+    /* ── Scrollbar ────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 0; }
+  </style>
+</head>
+<body>
+
+<!-- ── Setup screen (first launch) ────────────────────── -->
+<div class="fullscreen" id="setup-screen" style="z-index:500">
+  <div class="auth-box">
+    <div class="auth-logo">Pr<span>io</span></div>
+    <div class="auth-sub">Cloud-Sync einrichten — deine Aufgaben auf allen Geräten. Gib deine <a href="https://app.supabase.com" target="_blank" style="color:var(--red)">Supabase</a>-Zugangsdaten ein (Settings → API).</div>
+    <div class="form-group">
+      <label class="form-label">Supabase URL</label>
+      <input class="form-input" id="sb-url" type="url" placeholder="https://xxxx.supabase.co" autocomplete="off" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">Anon Public Key</label>
+      <input class="form-input" id="sb-key" type="text" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9…" autocomplete="off" />
+    </div>
+    <div id="setup-error" class="auth-error"></div>
+    <button class="btn-submit" onclick="saveSupabaseConfig()">Verbinden</button>
+    <button class="btn-ghost" onclick="useOfflineMode()">Offline verwenden (nur dieses Gerät)</button>
+  </div>
+</div>
+
+<!-- ── Auth screen ─────────────────────────────────────── -->
+<div class="fullscreen" id="auth-screen">
+  <div class="auth-box">
+    <div class="auth-logo">Pr<span>io</span></div>
+    <div class="auth-sub" id="auth-sub">Melde dich an, um deine Daten zu synchronisieren.</div>
+    <div class="form-group">
+      <label class="form-label">E-Mail</label>
+      <input class="form-input" id="auth-email" type="email" placeholder="du@beispiel.de" autocomplete="email" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">Passwort</label>
+      <input class="form-input" id="auth-password" type="password" placeholder="••••••••"
+             onkeydown="if(event.key==='Enter')handleAuth()" autocomplete="current-password" />
+    </div>
+    <div class="form-group" id="auth-name-group" style="display:none">
+      <label class="form-label">Dein Name</label>
+      <input class="form-input" id="auth-name" type="text" placeholder="Max Mustermann" maxlength="50" autocomplete="name" />
+    </div>
+    <div id="auth-error" class="auth-error"></div>
+    <button class="btn-submit" id="auth-btn" onclick="handleAuth()">Anmelden</button>
+    <div style="text-align:center;margin-top:16px;font-size:14px;color:var(--text-2)">
+      <span id="auth-toggle-text">Noch kein Konto?</span>
+      <button class="btn-link" id="auth-toggle-btn" onclick="toggleAuthMode()">Registrieren</button>
+    </div>
+    <button class="btn-ghost" onclick="useOfflineMode()">Offline verwenden</button>
+  </div>
+</div>
+
+<!-- ── Loading screen ─────────────────────────────────── -->
+<div class="fullscreen" id="loading-screen" style="z-index:300">
+  <div class="spinner"></div>
+  <div style="font-size:14px;color:var(--text-2);margin-top:16px">Daten werden geladen…</div>
+</div>
+
+<!-- Header -->
+<header class="header">
+  <div class="header-title">
+    Pr<span>io</span>
+    <span id="sync-dot" class="sync-dot" title="Cloud-Sync aktiv"></span>
+  </div>
+  <button class="btn-add" onclick="openNewTaskModal()" aria-label="Aufgabe hinzufügen">
+    <svg fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="2.5">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+    </svg>
+  </button>
+</header>
+
+<!-- Content -->
+<main class="content">
+
+  <!-- TODAY -->
+  <section class="view active" id="view-today">
+    <div class="summary-row">
+      <div class="summary-card">
+        <div class="val" id="stat-open">0</div>
+        <div class="lbl">Offen</div>
+      </div>
+      <div class="summary-card">
+        <div class="val" id="stat-done">0</div>
+        <div class="lbl">Erledigt</div>
+      </div>
+    </div>
+    <div class="progress-card">
+      <div class="row">
+        <span class="lbl">Tagesfortschritt</span>
+        <span class="pct" id="day-pct">0%</span>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" id="day-bar" style="width:0%"></div></div>
+    </div>
+    <div id="today-sections"></div>
+  </section>
+
+  <!-- INBOX -->
+  <section class="view" id="view-inbox">
+    <div class="quick-add">
+      <input id="inbox-input" type="text" placeholder="Schnell erfassen…" maxlength="200"
+             onkeydown="if(event.key==='Enter')quickAdd()" oninput="toggleQuickBtn()" />
+      <button id="inbox-btn" onclick="quickAdd()" disabled>
+        <svg fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m-7 7 7-7 7 7"/>
+        </svg>
+      </button>
+    </div>
+    <div class="section-label" id="inbox-label">Inbox</div>
+    <div id="inbox-list"></div>
+  </section>
+
+  <!-- ALL TASKS -->
+  <section class="view" id="view-all">
+    <div class="quick-add" style="margin-bottom:4px">
+      <input id="search-input" type="search" placeholder="Suchen…" oninput="renderAll()" />
+      <button onclick="renderAll()" style="background:var(--border)">
+        <svg fill="none" viewBox="0 0 24 24" stroke="var(--text-2)" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><path stroke-linecap="round" d="m21 21-4.35-4.35"/>
+        </svg>
+      </button>
+    </div>
+    <div id="all-list"></div>
+  </section>
+
+  <!-- PROJECTS -->
+  <section class="view" id="view-projects">
+    <button class="btn-submit" style="margin:0" onclick="openProjectModal()">+ Neues Projekt</button>
+    <div id="projects-list"></div>
+  </section>
+
+  <!-- PROFILE -->
+  <section class="view" id="view-profile">
+    <div class="profile-card">
+      <div class="profile-top">
+        <div class="avatar" id="profile-avatar">😊</div>
+        <div style="flex:1">
+          <div class="profile-name" id="profile-name">Prio Nutzer</div>
+          <div class="profile-level" id="profile-level-text">Level 1 · Anfänger</div>
+        </div>
+        <button onclick="openProfileModal()" style="border:none;background:var(--bg);border-radius:8px;padding:6px 10px;font-size:13px;color:var(--text-2);cursor:pointer;font-family:inherit;">✏️ Bearbeiten</button>
+      </div>
+      <div class="xp-row">
+        <span class="xp-label" id="xp-label">0 XP</span>
+        <span class="xp-value" id="xp-next">→ 100 XP</span>
+      </div>
+      <div class="xp-bar"><div class="xp-fill" id="xp-fill" style="width:0%"></div></div>
+    </div>
+    <div class="section-label">Statistiken</div>
+    <div class="profile-card">
+      <div class="stats-grid" id="stats-grid"></div>
+    </div>
+    <div class="section-label">Abzeichen</div>
+    <div class="profile-card">
+      <div class="badges-grid" id="badges-grid"></div>
+    </div>
+    <div class="section-label">Benachrichtigungen</div>
+    <div class="profile-card">
+      <div id="notif-status" style="display:flex;flex-direction:column;gap:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <div style="font-size:14px;font-weight:600;">Benachrichtigungen</div>
+            <div style="font-size:12px;color:var(--text-2);margin-top:2px;" id="notif-state-text">Nicht aktiviert</div>
+          </div>
+          <button onclick="toggleNotifications()" id="notif-toggle-btn"
+            style="height:34px;padding:0 14px;border-radius:10px;border:none;background:var(--red);color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">
+            Aktivieren
+          </button>
+        </div>
+        <div id="notif-settings" style="display:none;flex-direction:column;gap:10px;border-top:1px solid var(--border);padding-top:12px;">
+          <label style="display:flex;justify-content:space-between;align-items:center;font-size:14px;">
+            <span>Heute fällige Aufgaben</span>
+            <input type="checkbox" id="notif-due" onchange="saveNotifSettings()" style="width:18px;height:18px;accent-color:var(--red);" checked>
+          </label>
+          <label style="display:flex;justify-content:space-between;align-items:center;font-size:14px;">
+            <span>Überfällige Aufgaben</span>
+            <input type="checkbox" id="notif-overdue" onchange="saveNotifSettings()" style="width:18px;height:18px;accent-color:var(--red);" checked>
+          </label>
+          <label style="display:flex;justify-content:space-between;align-items:center;font-size:14px;">
+            <span>Tägliche Erinnerung</span>
+            <input type="checkbox" id="notif-daily" onchange="saveNotifSettings()" style="width:18px;height:18px;accent-color:var(--red);" checked>
+          </label>
+          <label style="display:flex;justify-content:space-between;align-items:center;font-size:14px;" id="notif-time-row">
+            <span style="color:var(--text-2);">Uhrzeit</span>
+            <input type="time" id="notif-time" value="08:00" onchange="saveNotifSettings()"
+              style="border:1px solid var(--border);border-radius:8px;padding:4px 8px;font-size:14px;font-family:inherit;color:var(--text);background:var(--bg);">
+          </label>
+        </div>
+      </div>
+    </div>
+    <button id="signout-btn" class="btn-signout" onclick="handleSignOut()" style="display:none">Abmelden</button>
+  </section>
+
+</main>
+
+<!-- Nav -->
+<nav class="nav">
+  <button class="nav-btn active" onclick="switchView('today',this)" aria-label="Heute">
+    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+      <rect x="3" y="4" width="18" height="18" rx="2"/><path stroke-linecap="round" d="M16 2v4M8 2v4M3 10h18"/>
+    </svg>
+    <span>Heute</span>
+  </button>
+  <button class="nav-btn" onclick="switchView('inbox',this)" aria-label="Inbox">
+    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+    </svg>
+    <span>Inbox</span>
+  </button>
+  <button class="nav-btn" onclick="switchView('all',this)" aria-label="Alle">
+    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+    </svg>
+    <span>Aufgaben</span>
+  </button>
+  <button class="nav-btn" onclick="switchView('projects',this)" aria-label="Projekte">
+    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
+    </svg>
+    <span>Projekte</span>
+  </button>
+  <button class="nav-btn" onclick="switchView('profile',this)" aria-label="Profil">
+    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+      <circle cx="12" cy="8" r="4"/><path stroke-linecap="round" d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+    </svg>
+    <span>Profil</span>
+  </button>
+</nav>
+
+<!-- New Task Modal -->
+<div class="modal-overlay" id="task-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="modal-title">Neue Aufgabe</div>
+    <div class="form-group">
+      <label class="form-label">Titel *</label>
+      <input class="form-input" id="f-title" type="text" placeholder="Was muss erledigt werden?" maxlength="200" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">Beschreibung</label>
+      <textarea class="form-textarea" id="f-desc" placeholder="Details…" rows="2"></textarea>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Fällig am</label>
+        <input class="form-input" id="f-date" type="date" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Priorität</label>
+        <select class="form-select" id="f-priority">
+          <option value="low">Niedrig</option>
+          <option value="medium" selected>Mittel</option>
+          <option value="high">Hoch</option>
+          <option value="urgent">Dringend</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Bereich</label>
+        <select class="form-select" id="f-area">
+          <option value="inbox" selected>Inbox</option>
+          <option value="work">Arbeit</option>
+          <option value="personal">Persönlich</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Projekt</label>
+        <select class="form-select" id="f-project">
+          <option value="">Keins</option>
+        </select>
+      </div>
+    </div>
+    <input type="hidden" id="f-id" />
+    <button class="btn-submit" onclick="saveTask()">Speichern</button>
+    <div style="height:8px"></div>
+  </div>
+</div>
+
+<!-- Project Modal -->
+<div class="modal-overlay" id="project-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Neues Projekt</div>
+    <div class="form-group">
+      <label class="form-label">Name *</label>
+      <input class="form-input" id="p-name" type="text" placeholder="Projektname" maxlength="100" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">Farbe</label>
+      <div id="color-picker" style="display:flex;gap:8px;flex-wrap:wrap;padding:4px 0"></div>
+    </div>
+    <button class="btn-submit" onclick="saveProject()">Projekt erstellen</button>
+    <div style="height:8px"></div>
+  </div>
+</div>
+
+<!-- Profile Modal -->
+<div class="modal-overlay" id="profile-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Profil bearbeiten</div>
+    <div class="form-group">
+      <label class="form-label">Dein Name</label>
+      <input class="form-input" id="pr-name" type="text" placeholder="Max Mustermann" maxlength="50" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">Emoji Avatar</label>
+      <div id="emoji-picker" style="display:flex;flex-wrap:wrap;gap:8px;padding:4px 0"></div>
+    </div>
+    <button class="btn-submit" onclick="saveProfile()">Speichern</button>
+    <div style="height:8px"></div>
+  </div>
+</div>
+
+<!-- Toast & XP popup -->
+<div class="toast" id="toast"></div>
+<div class="xp-popup" id="xp-popup"></div>
+
+<script>
+// ── Constants ────────────────────────────────────────────────
+const XP_AMT = { task:15, urgent:25, project:150 };
+const LEVEL_XP = [0,100,250,500,1000,2000,3500,5500,8000,11000,15000,20000];
+const LEVEL_TITLES = ['Anfänger','Lernender','Praktiker','Fortgeschritten','Erfahren','Kompetent','Profi','Experte','Meister','Großmeister','Elite','Legende'];
+const PRIORITY_LABEL = { low:'Niedrig', medium:'Mittel', high:'Hoch', urgent:'Dringend' };
+const COLORS = ['#C8102E','#4F46E5','#0EA5E9','#10B981','#F59E0B','#8B5CF6','#EC4899','#6B7280'];
+const AVATARS = ['😊','🧑','👩','🧔','👨‍💻','👩‍💻','🦸','🧠','⚡','🎯','🚀','🔥'];
+const BADGES = [
+  { id:'first_task',  name:'Erster Schritt',       emoji:'✅', check:s=>s.done>=1 },
+  { id:'ten_tasks',   name:'10 Aufgaben',           emoji:'🎯', check:s=>s.done>=10 },
+  { id:'hundred',     name:'Profi (100)',            emoji:'⭐', check:s=>s.done>=100 },
+  { id:'first_proj',  name:'Projektabschluss',      emoji:'📁', check:s=>s.doneProjects>=1 },
+  { id:'ten_proj',    name:'Projektmanager',        emoji:'💼', check:s=>s.doneProjects>=10 },
+  { id:'streak7',     name:'7-Tage-Strähne',        emoji:'🔥', check:s=>s.streak>=7 },
+  { id:'night_owl',   name:'Nachtschicht (23 Uhr)', emoji:'🌙', check:s=>s.nightOwl },
+  { id:'early_bird',  name:'Frühstarter (vor 7)',   emoji:'☀️', check:s=>s.earlyBird },
+  { id:'streak30',    name:'Monatsheld',            emoji:'🏆', check:s=>s.streak>=30 },
+];
+
+// ── Supabase config ──────────────────────────────────────────
+let _sbConfig   = JSON.parse(localStorage.getItem('prio_sb')   || 'null');
+let _offlineMode = localStorage.getItem('prio_mode') === 'offline';
+let sb = null;
+let currentUser = null;
+let _authMode = 'login';
+
+if (_sbConfig && _sbConfig.url && _sbConfig.key && !_offlineMode) {
+  try {
+    sb = supabase.createClient(_sbConfig.url, _sbConfig.key, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false, storage: window.localStorage } });
+  } catch(e) { console.warn('[sb] init failed:', e); }
+}
+
+// ── State ────────────────────────────────────────────────────
+let state = JSON.parse(localStorage.getItem('tf_state') || 'null') || {
+  tasks: [], projects: [], xp: 0, streak: 0, lastDate: null,
+  done: 0, doneProjects: 0, badges: [], nightOwl: false, earlyBird: false,
+  profileName: '', profileEmoji: '😊',
+};
+function save() { localStorage.setItem('tf_state', JSON.stringify(state)); }
+function uid()  { return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+// ── DB converters ────────────────────────────────────────────
+function taskToDb(t) {
+  return {
+    id: t.id, user_id: currentUser.id,
+    title: t.title, description: t.desc || null,
+    due_date: t.dueDate || null, priority: t.priority,
+    area: t.area, project_id: t.projectId || null,
+    completed: t.done,
+  };
+}
+function dbToTask(r) {
+  return {
+    id: r.id, title: r.title, desc: r.description || '',
+    dueDate: r.due_date || '', priority: r.priority || 'medium',
+    area: r.area || 'inbox', projectId: r.project_id || '',
+    done: r.completed || false, created: new Date(r.created_at).getTime(),
+  };
+}
+function projectToDb(p) {
+  return { id: p.id, user_id: currentUser.id, name: p.name, color: p.color };
+}
+function dbToProject(r) {
+  return { id: r.id, name: r.name, color: r.color, created: new Date(r.created_at).getTime() };
+}
+
+// ── DB sync ──────────────────────────────────────────────────
+function setSyncDot(state) {
+  const el = document.getElementById('sync-dot');
+  el.className = 'sync-dot' + (state ? ' '+state : '');
+}
+
+async function dbUpsertTask(t) {
+  if (!sb || !currentUser) return;
+  setSyncDot('syncing');
+  const { error } = await sb.from('tasks').upsert(taskToDb(t));
+  setSyncDot(error ? 'err' : '');
+  if (error) console.warn('[db] task upsert:', error.message);
+}
+async function dbUpdateTask(t) {
+  if (!sb || !currentUser) return;
+  setSyncDot('syncing');
+  const { error } = await sb.from('tasks').update({
+    title: t.title, description: t.desc || null, due_date: t.dueDate || null,
+    priority: t.priority, area: t.area, project_id: t.projectId || null, completed: t.done,
+  }).eq('id', t.id).eq('user_id', currentUser.id);
+  setSyncDot(error ? 'err' : '');
+  if (error) console.warn('[db] task update:', error.message);
+}
+async function dbDeleteTask(id) {
+  if (!sb || !currentUser) return;
+  setSyncDot('syncing');
+  const { error } = await sb.from('tasks').delete().eq('id', id).eq('user_id', currentUser.id);
+  setSyncDot(error ? 'err' : '');
+  if (error) console.warn('[db] task delete:', error.message);
+}
+async function dbUpsertProject(p) {
+  if (!sb || !currentUser) return;
+  setSyncDot('syncing');
+  const { error } = await sb.from('projects').upsert(projectToDb(p));
+  setSyncDot(error ? 'err' : '');
+  if (error) console.warn('[db] project upsert:', error.message);
+}
+async function dbDeleteProject(id) {
+  if (!sb || !currentUser) return;
+  setSyncDot('syncing');
+  const { error } = await sb.from('projects').delete().eq('id', id).eq('user_id', currentUser.id);
+  setSyncDot(error ? 'err' : '');
+  if (error) console.warn('[db] project delete:', error.message);
+}
+async function dbSyncProfile() {
+  if (!sb || !currentUser) return;
+  const { error } = await sb.from('profiles').update({
+    display_name: state.profileName || null,
+    avatar_url:   state.profileEmoji || null,
+    xp:           state.xp,
+    streak_days:  state.streak,
+    last_activity_date: state.lastDate || null,
+  }).eq('id', currentUser.id);
+  if (error) console.warn('[db] profile sync:', error.message);
+
+  // sync badges
+  if (state.badges.length) {
+    const rows = state.badges.map(bid => ({ user_id: currentUser.id, badge_id: bid }));
+    await sb.from('user_badges').upsert(rows, { onConflict: 'user_id,badge_id', ignoreDuplicates: true })
+      .catch(e => console.warn('[db] badge sync:', e.message));
+  }
+}
+
+// ── Load from Supabase ───────────────────────────────────────
+async function loadFromSupabase() {
+  try {
+    const [tasksRes, projectsRes, profileRes, badgesRes] = await Promise.all([
+      sb.from('tasks').select('*').eq('user_id', currentUser.id).order('created_at', { ascending: false }),
+      sb.from('projects').select('*').eq('user_id', currentUser.id).order('created_at', { ascending: false }),
+      sb.from('profiles').select('*').eq('id', currentUser.id).single(),
+      sb.from('user_badges').select('badge_id').eq('user_id', currentUser.id),
+    ]);
+
+    if (tasksRes.data)    state.tasks    = tasksRes.data.map(dbToTask);
+    if (projectsRes.data) state.projects = projectsRes.data.map(dbToProject);
+
+    if (profileRes.data) {
+      const p = profileRes.data;
+      state.profileName  = p.display_name || '';
+      state.profileEmoji = p.avatar_url   || '😊';
+      state.xp           = p.xp           || 0;
+      state.streak       = p.streak_days  || 0;
+      state.lastDate     = p.last_activity_date || null;
+    }
+
+    if (badgesRes.data) {
+      state.badges    = badgesRes.data.map(b => b.badge_id);
+      state.nightOwl  = state.badges.includes('night_owl');
+      state.earlyBird = state.badges.includes('early_bird');
+    }
+
+    state.done = state.tasks.filter(t => t.done).length;
+    save();
+  } catch(e) {
+    console.warn('[db] load error:', e);
+  }
+}
+
+// ── Auth UI ──────────────────────────────────────────────────
+function showLoading(on) {
+  document.getElementById('loading-screen').classList.toggle('show', on);
+}
+function showSetupScreen()  { document.getElementById('setup-screen').classList.add('show'); }
+function showAuthScreen()   { document.getElementById('auth-screen').classList.add('show'); }
+function hideAllScreens()   { document.querySelectorAll('.fullscreen').forEach(el => el.classList.remove('show')); }
+
+function showApp() {
+  hideAllScreens();
+  const online = !!(sb && currentUser);
+  document.getElementById('sync-dot').style.display  = online ? 'inline-block' : 'none';
+  document.getElementById('signout-btn').style.display = online ? 'block' : 'none';
+  renderToday();
+}
+
+async function saveSupabaseConfig() {
+  const url = document.getElementById('sb-url').value.trim();
+  const key = document.getElementById('sb-key').value.trim();
+  const errEl = document.getElementById('setup-error');
+  errEl.classList.remove('show');
+
+  if (!url || !key) {
+    errEl.textContent = 'Bitte beide Felder ausfüllen.';
+    errEl.classList.add('show'); return;
+  }
+  const btn = document.querySelector('#setup-screen .btn-submit');
+  btn.disabled = true; btn.textContent = '…';
+
+  try {
+    const client = supabase.createClient(url, key);
+    // quick connection check
+    await client.from('profiles').select('id').limit(1);
+    sb = client;
+    localStorage.setItem('prio_sb', JSON.stringify({ url, key }));
+    localStorage.removeItem('prio_mode');
+    _offlineMode = false;
+    _sbConfig = { url, key };
+    document.getElementById('setup-screen').classList.remove('show');
+    showAuthScreen();
+  } catch(e) {
+    errEl.textContent = 'Verbindung fehlgeschlagen: ' + (e.message || 'Ungültige URL oder Key.');
+    errEl.classList.add('show');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Verbinden';
+  }
+}
+
+function useOfflineMode() {
+  localStorage.setItem('prio_mode', 'offline');
+  _offlineMode = true;
+  sb = null; currentUser = null;
+  showApp();
+}
+
+function toggleAuthMode() {
+  _authMode = _authMode === 'login' ? 'register' : 'login';
+  const isReg = _authMode === 'register';
+  document.getElementById('auth-sub').textContent          = isReg ? 'Erstelle dein kostenloses Konto.' : 'Melde dich an, um deine Daten zu synchronisieren.';
+  document.getElementById('auth-btn').textContent          = isReg ? 'Registrieren' : 'Anmelden';
+  document.getElementById('auth-toggle-text').textContent  = isReg ? 'Schon ein Konto?' : 'Noch kein Konto?';
+  document.getElementById('auth-toggle-btn').textContent   = isReg ? 'Anmelden' : 'Registrieren';
+  document.getElementById('auth-name-group').style.display = isReg ? 'flex' : 'none';
+  document.getElementById('auth-error').classList.remove('show');
+}
+
+async function handleAuth() {
+  const email = document.getElementById('auth-email').value.trim();
+  const pass  = document.getElementById('auth-password').value;
+  const errEl = document.getElementById('auth-error');
+  const btn   = document.getElementById('auth-btn');
+  errEl.classList.remove('show');
+
+  if (!email || !pass) {
+    errEl.textContent = 'Bitte E-Mail und Passwort eingeben.';
+    errEl.classList.add('show'); return;
+  }
+  btn.disabled = true; btn.textContent = '…';
+
+  try {
+    if (_authMode === 'register') {
+      const name = document.getElementById('auth-name').value.trim();
+      const { data, error } = await sb.auth.signUp({
+        email, password: pass,
+        options: { data: { display_name: name || 'Prio Nutzer' } },
+      });
+      if (error) throw error;
+      // Check if email confirmation is required
+      if (data.user && !data.session) {
+        errEl.textContent = 'Registrierung erfolgreich! Bitte bestätige deine E-Mail, dann melde dich an.';
+        errEl.style.color = 'var(--green)';
+        errEl.classList.add('show');
+        btn.disabled = false;
+        btn.textContent = 'Registrieren';
+        return;
+      }
+      currentUser = data.user;
+      if (name) state.profileName = name;
+    } else {
+      const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
+      if (error) throw error;
+      currentUser = data.user;
+    }
+
+    showLoading(true);
+    await loadFromSupabase();
+    showLoading(false);
+    showApp();
+  } catch(e) {
+    let msg = e.message || 'Fehler aufgetreten.';
+    if (msg.includes('Invalid login') || msg.includes('invalid_credentials')) msg = 'Falsche E-Mail oder Passwort.';
+    if (msg.includes('already registered')) msg = 'Diese E-Mail ist bereits registriert.';
+    if (msg.includes('Password should'))    msg = 'Passwort muss mindestens 6 Zeichen haben.';
+    if (msg.includes('check your email'))   msg = 'Bitte bestätige deine E-Mail, dann melde dich an.';
+    if (msg.includes('Email not confirmed')) msg = 'E-Mail noch nicht bestätigt. Bitte prüfe dein Postfach.';
+    errEl.style.color = 'var(--red)';
+    errEl.textContent = msg; errEl.classList.add('show');
+    showLoading(false);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = _authMode === 'login' ? 'Anmelden' : 'Registrieren';
+  }
+}
+
+async function handleSignOut() {
+  if (!sb) return;
+  await sb.auth.signOut().catch(() => {});
+  currentUser = null;
+  state = {
+    tasks:[], projects:[], xp:0, streak:0, lastDate:null,
+    done:0, doneProjects:0, badges:[], nightOwl:false, earlyBird:false,
+    profileName:'', profileEmoji:'😊',
+  };
+  save();
+  showAuthScreen();
+}
+
+// ── View switching ───────────────────────────────────────────
+function switchView(name, btn) {
+  if (name === 'profile') setTimeout(updateNotifUI, 50);
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+  btn.classList.add('active');
+  renderView(name);
+}
+function renderView(name) {
+  if (name==='today')    renderToday();
+  if (name==='inbox')    renderInbox();
+  if (name==='all')      renderAll();
+  if (name==='projects') renderProjects();
+  if (name==='profile')  renderProfile();
+}
+
+// ── Today ────────────────────────────────────────────────────
+const PRIO_ORDER = ['urgent','high','medium','low',''];
+const PRIO_LABEL = { urgent:'🔴 Dringend', high:'🟠 Hoch', medium:'🟡 Mittel', low:'🟢 Niedrig', '':'📋 Kein Datum' };
+
+function renderToday() {
+  const today = todayStr();
+  const allOpen = state.tasks.filter(t => !t.done);
+  const allDone = state.tasks.filter(t => t.done && t.dueDate === today);
+
+  // Stats: all open + done today
+  const open = allOpen.length;
+  const done = allDone.length;
+  const total = open + done;
+  const pct  = total ? Math.round(done/total*100) : 0;
+
+  document.getElementById('stat-open').textContent = open;
+  document.getElementById('stat-done').textContent = done;
+  document.getElementById('day-pct').textContent   = pct+'%';
+  document.getElementById('day-bar').style.width   = pct+'%';
+
+  const container = document.getElementById('today-sections');
+  if (!allOpen.length) {
+    container.innerHTML = emptyHTML('Alles erledigt 🎉','Keine offenen Aufgaben. Gut gemacht!');
+    return;
+  }
+
+  // Group by priority
+  const groups = {};
+  PRIO_ORDER.forEach(p => groups[p] = []);
+  allOpen.forEach(t => {
+    const p = PRIO_ORDER.includes(t.priority) ? t.priority : '';
+    groups[p].push(t);
+  });
+
+  // Sort within each group: overdue first, then by due date, then by created
+  const sortTasks = tasks => tasks.sort((a,b) => {
+    const aOver = a.dueDate && a.dueDate < today ? -1 : 0;
+    const bOver = b.dueDate && b.dueDate < today ? -1 : 0;
+    if (aOver !== bOver) return aOver - bOver;
+    if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+    if (a.dueDate) return -1;
+    if (b.dueDate) return 1;
+    return b.created - a.created;
+  });
+
+  let html = '';
+  PRIO_ORDER.forEach(p => {
+    const tasks = sortTasks(groups[p]);
+    if (!tasks.length) return;
+    html += `<div class="section-label" style="margin-top:4px">${PRIO_LABEL[p]} <span style="font-weight:400;color:var(--text-3)">(${tasks.length})</span></div>`;
+    html += tasks.map(taskHTML).join('');
+  });
+
+  container.innerHTML = html;
+}
+
+// ── Inbox ────────────────────────────────────────────────────
+function renderInbox() {
+  const inbox = state.tasks.filter(t => t.area==='inbox' && !t.done);
+  document.getElementById('inbox-label').textContent = `Inbox (${inbox.length})`;
+  const list = document.getElementById('inbox-list');
+  if (!inbox.length) { list.innerHTML = emptyHTML('Inbox ist leer','Schnell erfassen — sortiere später.'); return; }
+  list.innerHTML = inbox.map(taskHTML).join('');
+}
+
+async function quickAdd() {
+  const inp = document.getElementById('inbox-input');
+  const title = inp.value.trim();
+  if (!title) return;
+  const task = { id:uid(), title, desc:'', dueDate:'', priority:'medium', area:'inbox', projectId:'', done:false, created:Date.now() };
+  state.tasks.unshift(task);
+  save(); inp.value=''; toggleQuickBtn();
+  renderInbox(); renderTodayIfActive();
+  showToast('Aufgabe hinzugefügt');
+  await dbUpsertTask(task);
+}
+
+function toggleQuickBtn() {
+  const v = document.getElementById('inbox-input').value.trim();
+  document.getElementById('inbox-btn').disabled = !v;
+}
+
+// ── All Tasks ────────────────────────────────────────────────
+function renderAll() {
+  const q = (document.getElementById('search-input')?.value||'').toLowerCase();
+  let tasks = q ? state.tasks.filter(t=>t.title.toLowerCase().includes(q)) : [...state.tasks];
+  tasks.sort((a,b)=>a.done-b.done || b.created-a.created);
+  const list = document.getElementById('all-list');
+  if (!tasks.length) { list.innerHTML = emptyHTML('Keine Aufgaben','Tippe oben rechts auf +'); return; }
+  list.innerHTML = tasks.map(taskHTML).join('');
+}
+
+// ── Projects ─────────────────────────────────────────────────
+function renderProjects() {
+  const list = document.getElementById('projects-list');
+  if (!state.projects.length) { list.innerHTML = emptyHTML('Keine Projekte','Erstelle dein erstes Projekt.'); return; }
+  list.innerHTML = state.projects.map(p => {
+    const tasks = state.tasks.filter(t=>t.projectId===p.id);
+    const done  = tasks.filter(t=>t.done).length;
+    const pct   = tasks.length ? Math.round(done/tasks.length*100) : 0;
+    return `<div class="project-card" style="margin-bottom:10px">
+      <div class="project-header">
+        <div class="project-dot" style="background:${p.color}"></div>
+        <div class="project-name">${esc(p.name)}</div>
+        <div class="project-count">${done}/${tasks.length}</div>
+      </div>
+      <div class="project-progress-row">
+        <div class="project-bar"><div class="project-fill" style="width:${pct}%;background:${p.color}"></div></div>
+        <div class="project-pct">${pct}%</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Profile modal ────────────────────────────────────────────
+let selectedEmoji = '😊';
+function openProfileModal() {
+  document.getElementById('pr-name').value = state.profileName || '';
+  selectedEmoji = state.profileEmoji || '😊';
+  const picker = document.getElementById('emoji-picker');
+  picker.innerHTML = AVATARS.map(e =>
+    `<div onclick="selectEmoji('${e}',this)" style="width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:22px;cursor:pointer;background:${e===selectedEmoji?'var(--red-light)':'var(--bg)'};border:2px solid ${e===selectedEmoji?'var(--red)':'transparent'};transition:all .15s">${e}</div>`
+  ).join('');
+  document.getElementById('profile-modal').classList.add('open');
+  setTimeout(()=>document.getElementById('pr-name').focus(),100);
+}
+function selectEmoji(e, el) {
+  selectedEmoji = e;
+  document.querySelectorAll('#emoji-picker div').forEach(d=>{
+    d.style.background='var(--bg)'; d.style.border='2px solid transparent';
+  });
+  el.style.background='var(--red-light)'; el.style.border='2px solid var(--red)';
+}
+async function saveProfile() {
+  const name = document.getElementById('pr-name').value.trim();
+  state.profileName  = name || 'Prio Nutzer';
+  state.profileEmoji = selectedEmoji;
+  save(); closeModals(); renderProfile();
+  showToast('Profil gespeichert');
+  await dbSyncProfile();
+}
+
+// ── Profile view ─────────────────────────────────────────────
+function renderProfile() {
+  const level = getLevel(state.xp);
+  const cur   = LEVEL_XP[level-1]||0;
+  const nxt   = LEVEL_XP[level]||LEVEL_XP[LEVEL_XP.length-1];
+  const pct   = nxt>cur ? Math.round((state.xp-cur)/(nxt-cur)*100) : 100;
+
+  const name  = state.profileName  || 'Prio Nutzer';
+  const emoji = state.profileEmoji || '😊';
+  document.getElementById('profile-name').textContent       = name;
+  document.getElementById('profile-avatar').textContent     = emoji;
+  document.getElementById('profile-level-text').textContent = `Level ${level} · ${LEVEL_TITLES[level-1]||'Legende'}`;
+  document.getElementById('xp-label').textContent = `${state.xp.toLocaleString('de')} XP`;
+  document.getElementById('xp-next').textContent  = `→ ${nxt.toLocaleString('de')} XP`;
+  document.getElementById('xp-fill').style.width  = pct+'%';
+
+  document.getElementById('stats-grid').innerHTML = `
+    <div class="stat-item"><div class="stat-val red">${state.done}</div><div class="stat-lbl">Aufgaben erledigt</div></div>
+    <div class="stat-item"><div class="stat-val red">${state.xp.toLocaleString('de')}</div><div class="stat-lbl">Gesamt XP</div></div>
+    <div class="stat-item"><div class="stat-val">${state.doneProjects}</div><div class="stat-lbl">Projekte</div></div>
+    <div class="stat-item"><div class="stat-val">${state.streak}</div><div class="stat-lbl">Tage-Strähne 🔥</div></div>
+  `;
+
+  const stats = { done:state.done, doneProjects:state.doneProjects, streak:state.streak, nightOwl:state.nightOwl, earlyBird:state.earlyBird };
+  document.getElementById('badges-grid').innerHTML = BADGES.map(b => {
+    const earned = state.badges.includes(b.id);
+    return `<div class="badge-item">
+      <div class="badge-icon${earned?'':' locked'}">${b.emoji}</div>
+      <div class="badge-name">${b.name}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── Task HTML ────────────────────────────────────────────────
+function taskHTML(t) {
+  const overdue = t.dueDate && t.dueDate < todayStr() && !t.done;
+  const project = t.projectId ? state.projects.find(p=>p.id===t.projectId) : null;
+  return `<div class="task-card${t.done?' done':''}" id="tc-${t.id}" style="margin-bottom:8px">
+    <div class="task-stripe ${t.priority}"></div>
+    <div class="task-body">
+      <div class="task-check${t.done?' checked':''}" onclick="toggleTask('${t.id}')">
+        <svg fill="none" viewBox="0 0 24 24" stroke="white" stroke-width="3">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+        </svg>
+      </div>
+      <div class="task-info">
+        <div class="task-title">${esc(t.title)}</div>
+        <div class="task-meta">
+          ${t.dueDate ? `<span class="chip${overdue?' overdue':''}">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path stroke-linecap="round" d="M16 2v4M8 2v4M3 10h18"/></svg>
+            ${fmtDate(t.dueDate)}
+          </span>` : ''}
+          <span class="priority-chip ${t.priority}">${PRIORITY_LABEL[t.priority]}</span>
+          ${project ? `<span class="chip"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${project.color}"></span>${esc(project.name)}</span>` : ''}
+          ${t.area!=='inbox'?`<span class="chip">${t.area==='work'?'Arbeit':'Persönlich'}</span>`:''}
+        </div>
+      </div>
+      <div class="task-actions">
+        <button class="task-action-btn" onclick="openEditModal('${t.id}')" title="Bearbeiten">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+          </svg>
+        </button>
+        <button class="task-action-btn delete" onclick="deleteTask('${t.id}')" title="Löschen">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function emptyHTML(title, sub) {
+  return `<div class="empty">
+    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.2">
+      <path stroke-linecap="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+    </svg>
+    <div class="e-title">${title}</div>
+    <div class="e-sub">${sub}</div>
+  </div>`;
+}
+
+// ── Task actions ─────────────────────────────────────────────
+async function toggleTask(id) {
+  const t = state.tasks.find(t=>t.id===id);
+  if (!t) return;
+  t.done = !t.done;
+
+  if (t.done) {
+    const xpAmt = t.priority==='urgent' ? XP_AMT.urgent : XP_AMT.task;
+    state.xp   += xpAmt;
+    state.done  += 1;
+    const h = new Date().getHours();
+    if (h >= 23) state.nightOwl = true;
+    if (h <  7)  state.earlyBird = true;
+    updateStreak();
+    checkBadges();
+    showXP(xpAmt);
+    dbSyncProfile();
+  }
+
+  save(); rerenderActiveView();
+  await dbUpdateTask(t);
+}
+
+async function deleteTask(id) {
+  state.tasks = state.tasks.filter(t=>t.id!==id);
+  save(); rerenderActiveView(); showToast('Aufgabe gelöscht');
+  await dbDeleteTask(id);
+}
+
+// ── Modal: New/Edit Task ─────────────────────────────────────
+function openNewTaskModal() {
+  document.getElementById('f-id').value       = '';
+  document.getElementById('f-title').value    = '';
+  document.getElementById('f-desc').value     = '';
+  document.getElementById('f-date').value     = '';
+  document.getElementById('f-priority').value = 'medium';
+  document.getElementById('f-area').value     = 'inbox';
+  document.getElementById('modal-title').textContent = 'Neue Aufgabe';
+  populateProjectSelect('');
+  document.getElementById('task-modal').classList.add('open');
+  setTimeout(()=>document.getElementById('f-title').focus(), 100);
+}
+function openEditModal(id) {
+  const t = state.tasks.find(t=>t.id===id);
+  if (!t) return;
+  document.getElementById('f-id').value       = t.id;
+  document.getElementById('f-title').value    = t.title;
+  document.getElementById('f-desc').value     = t.desc||'';
+  document.getElementById('f-date').value     = t.dueDate||'';
+  document.getElementById('f-priority').value = t.priority;
+  document.getElementById('f-area').value     = t.area;
+  document.getElementById('modal-title').textContent = 'Aufgabe bearbeiten';
+  populateProjectSelect(t.projectId||'');
+  document.getElementById('task-modal').classList.add('open');
+}
+function populateProjectSelect(selected) {
+  const sel = document.getElementById('f-project');
+  sel.innerHTML = '<option value="">Keins</option>' +
+    state.projects.map(p=>`<option value="${p.id}"${p.id===selected?' selected':''}>${esc(p.name)}</option>`).join('');
+}
+async function saveTask() {
+  const title = document.getElementById('f-title').value.trim();
+  if (!title) { document.getElementById('f-title').focus(); return; }
+  const id = document.getElementById('f-id').value;
+  const data = {
+    title, desc: document.getElementById('f-desc').value.trim(),
+    dueDate:   document.getElementById('f-date').value,
+    priority:  document.getElementById('f-priority').value,
+    area:      document.getElementById('f-area').value,
+    projectId: document.getElementById('f-project').value,
+  };
+  if (id) {
+    const t = state.tasks.find(t=>t.id===id);
+    Object.assign(t, data);
+    save(); closeModals(); rerenderActiveView(); showToast('Aufgabe aktualisiert');
+    await dbUpdateTask(t);
+  } else {
+    const task = { id:uid(), done:false, created:Date.now(), ...data };
+    state.tasks.unshift(task);
+    save(); closeModals(); rerenderActiveView(); showToast('Aufgabe erstellt');
+    await dbUpsertTask(task);
+  }
+}
+
+// ── Modal: Project ───────────────────────────────────────────
+let selectedColor = COLORS[0];
+function openProjectModal() {
+  document.getElementById('p-name').value = '';
+  selectedColor = COLORS[0];
+  const picker = document.getElementById('color-picker');
+  picker.innerHTML = COLORS.map(c=>`
+    <div onclick="selectColor('${c}',this)" style="width:30px;height:30px;border-radius:50%;background:${c};cursor:pointer;border:3px solid ${c===selectedColor?'#fff':'transparent'};outline:3px solid ${c===selectedColor?c:'transparent'};transition:all .15s"></div>
+  `).join('');
+  document.getElementById('project-modal').classList.add('open');
+  setTimeout(()=>document.getElementById('p-name').focus(),100);
+}
+function selectColor(c, el) {
+  selectedColor = c;
+  document.querySelectorAll('#color-picker div').forEach(d=>{
+    d.style.border='3px solid transparent'; d.style.outline='3px solid transparent';
+  });
+  el.style.border='3px solid white'; el.style.outline=`3px solid ${c}`;
+}
+async function saveProject() {
+  const name = document.getElementById('p-name').value.trim();
+  if (!name) { document.getElementById('p-name').focus(); return; }
+  const project = { id:uid(), name, color:selectedColor, created:Date.now() };
+  state.projects.push(project);
+  save(); closeModals(); switchView('projects', document.querySelectorAll('.nav-btn')[3]);
+  showToast('Projekt erstellt');
+  await dbUpsertProject(project);
+}
+
+// ── Helpers ──────────────────────────────────────────────────
+function closeModals() {
+  document.querySelectorAll('.modal-overlay').forEach(m=>m.classList.remove('open'));
+}
+document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',e=>{ if(e.target===m) closeModals(); }));
+
+function todayStr() { return new Date().toISOString().split('T')[0]; }
+function fmtDate(s) {
+  if (!s) return '';
+  const t = todayStr();
+  const tm = new Date(todayStr()); tm.setDate(tm.getDate()+1);
+  if (s===t) return 'Heute';
+  if (s===tm.toISOString().split('T')[0]) return 'Morgen';
+  const [y,m,d] = s.split('-');
+  return `${d}.${m}.${y.slice(2)}`;
+}
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function getLevel(xp) { let l=1; for(let i=1;i<LEVEL_XP.length;i++) if(xp>=LEVEL_XP[i]) l=i+1; else break; return l; }
+function rerenderActiveView() {
+  const active = document.querySelector('.view.active');
+  if (!active) return;
+  renderView(active.id.replace('view-',''));
+}
+function renderTodayIfActive() {
+  if (document.getElementById('view-today').classList.contains('active')) renderToday();
+}
+function updateStreak() {
+  const today = todayStr();
+  const yesterday = new Date(); yesterday.setDate(yesterday.getDate()-1);
+  const yStr = yesterday.toISOString().split('T')[0];
+  if (state.lastDate === today) return;
+  state.streak  = state.lastDate === yStr ? state.streak+1 : 1;
+  state.lastDate = today;
+}
+function checkBadges() {
+  const stats = { done:state.done, doneProjects:state.doneProjects, streak:state.streak, nightOwl:state.nightOwl, earlyBird:state.earlyBird };
+  BADGES.forEach(b => {
+    if (!state.badges.includes(b.id) && b.check(stats)) {
+      state.badges.push(b.id);
+      setTimeout(()=>showToast(`🏅 Abzeichen: ${b.name}`), 600);
+    }
+  });
+}
+
+let toastTimer;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>el.classList.remove('show'), 2200);
+}
+let xpTimer;
+function showXP(amt) {
+  const el = document.getElementById('xp-popup');
+  el.textContent = `+${amt} XP`; el.classList.add('show');
+  clearTimeout(xpTimer);
+  xpTimer = setTimeout(()=>el.classList.remove('show'), 1800);
+}
+
+// ── Prevent zoom & overscroll ────────────────────────────────
+document.addEventListener('touchstart', function(e) {
+  if (e.touches.length > 1) e.preventDefault();
+}, { passive: false });
+
+let lastTouchEnd = 0;
+document.addEventListener('touchend', function(e) {
+  const now = Date.now();
+  if (now - lastTouchEnd <= 300) e.preventDefault();
+  lastTouchEnd = now;
+}, { passive: false });
+
+document.addEventListener('gesturestart', function(e) {
+  e.preventDefault();
+}, { passive: false });
+
+document.addEventListener('gesturechange', function(e) {
+  e.preventDefault();
+}, { passive: false });
+
+// ── Service Worker ───────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(()=>{});
+}
+
+// ── Init ─────────────────────────────────────────────────────
+async function init() {
+  // No config at all → show setup
+  if (!_sbConfig && !_offlineMode) {
+    showSetupScreen(); return;
+  }
+  // Offline mode → go straight to app
+  if (_offlineMode || !sb) {
+    showApp(); return;
+  }
+
+  // Listen for auth state changes (handles token refresh, session restore)
+  sb.auth.onAuthStateChange(async (event, session) => {
+    if (event === 'SIGNED_IN' && session && !currentUser) {
+      currentUser = session.user;
+      await loadFromSupabase();
+      showLoading(false);
+      showApp();
+    } else if (event === 'SIGNED_OUT') {
+      currentUser = null;
+      showAuthScreen();
+    } else if (event === 'TOKEN_REFRESHED' && session) {
+      currentUser = session.user;
+    }
+  });
+
+  // Supabase configured → check existing session
+  showLoading(true);
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    if (session) {
+      currentUser = session.user;
+      await loadFromSupabase();
+      showLoading(false);
+      showApp();
+    } else {
+      showLoading(false);
+      showAuthScreen();
+    }
+  } catch(e) {
+    console.warn('[init] error:', e);
+    showLoading(false);
+    showApp(); // fallback to cached state
+  }
+}
+
+// ── Notifications ────────────────────────────────────────────
+function getNotifSettings() {
+  return JSON.parse(localStorage.getItem('prio_notif') || JSON.stringify({
+    enabled: false, due: true, overdue: true, daily: true, time: '08:00'
+  }));
+}
+function saveNotifSettings() {
+  const s = getNotifSettings();
+  s.due     = document.getElementById('notif-due')?.checked ?? true;
+  s.overdue = document.getElementById('notif-overdue')?.checked ?? true;
+  s.daily   = document.getElementById('notif-daily')?.checked ?? true;
+  s.time    = document.getElementById('notif-time')?.value ?? '08:00';
+  localStorage.setItem('prio_notif', JSON.stringify(s));
+  scheduleNotifications();
+}
+
+function updateNotifUI() {
+  const s = getNotifSettings();
+  const granted = Notification.permission === 'granted';
+  const enabled = s.enabled && granted;
+  const stateEl = document.getElementById('notif-state-text');
+  const btnEl   = document.getElementById('notif-toggle-btn');
+  const settingsEl = document.getElementById('notif-settings');
+  if (!stateEl) return;
+  if (enabled) {
+    stateEl.textContent = 'Aktiviert';
+    stateEl.style.color = 'var(--green)';
+    btnEl.textContent = 'Deaktivieren';
+    btnEl.style.background = 'var(--border)';
+    btnEl.style.color = 'var(--text-2)';
+    settingsEl.style.display = 'flex';
+    document.getElementById('notif-due').checked     = s.due;
+    document.getElementById('notif-overdue').checked = s.overdue;
+    document.getElementById('notif-daily').checked   = s.daily;
+    document.getElementById('notif-time').value      = s.time;
+  } else {
+    stateEl.textContent = Notification.permission === 'denied' ? 'Blockiert (Einstellungen öffnen)' : 'Nicht aktiviert';
+    stateEl.style.color = 'var(--text-2)';
+    btnEl.textContent = 'Aktivieren';
+    btnEl.style.background = 'var(--red)';
+    btnEl.style.color = '#fff';
+    settingsEl.style.display = 'none';
+  }
+}
+
+async function toggleNotifications() {
+  const s = getNotifSettings();
+  if (s.enabled && Notification.permission === 'granted') {
+    s.enabled = false;
+    localStorage.setItem('prio_notif', JSON.stringify(s));
+    updateNotifUI();
+    return;
+  }
+  if (Notification.permission === 'denied') {
+    showToast('Bitte Benachrichtigungen in den Browser-Einstellungen erlauben.');
+    return;
+  }
+  const perm = await Notification.requestPermission();
+  if (perm === 'granted') {
+    s.enabled = true;
+    localStorage.setItem('prio_notif', JSON.stringify(s));
+    updateNotifUI();
+    scheduleNotifications();
+    showToast('Benachrichtigungen aktiviert! 🔔');
+  } else {
+    showToast('Benachrichtigung wurde abgelehnt.');
+  }
+}
+
+function scheduleNotifications() {
+  const s = getNotifSettings();
+  if (!s.enabled || Notification.permission !== 'granted') return;
+
+  const now   = new Date();
+  const today = now.toISOString().split('T')[0];
+
+  // Send via Service Worker if available (works in background on Android)
+  // iOS PWA: Service Worker notifications work when app is open
+  const sendNotif = (title, body, delay) => {
+    setTimeout(() => {
+      if (Notification.permission !== 'granted') return;
+      if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({
+          type: 'SHOW_NOTIFICATION', title, body,
+          icon: '/icon-192.png', badge: '/icon-192.png'
+        });
+      } else {
+        new Notification(title, { body, icon: '/icon-192.png', badge: '/icon-192.png' });
+      }
+    }, delay);
+  };
+
+  // Due today
+  if (s.due) {
+    const dueTasks = state.tasks.filter(t => !t.done && t.dueDate === today);
+    if (dueTasks.length > 0) {
+      const msg = dueTasks.length === 1
+        ? `"${dueTasks[0].title}" ist heute fällig.`
+        : `${dueTasks.length} Aufgaben sind heute fällig.`;
+      sendNotif('📅 Heute fällig — Prio', msg, 2000);
+    }
+  }
+
+  // Overdue
+  if (s.overdue) {
+    const overdue = state.tasks.filter(t => !t.done && t.dueDate && t.dueDate < today);
+    if (overdue.length > 0) {
+      const msg = overdue.length === 1
+        ? `"${overdue[0].title}" ist überfällig!`
+        : `${overdue.length} Aufgaben sind überfällig!`;
+      sendNotif('⚠️ Überfällig — Prio', msg, 3500);
+    }
+  }
+
+  // Daily reminder — schedule for chosen time
+  if (s.daily) {
+    const [h, m] = (s.time || '08:00').split(':').map(Number);
+    const target = new Date();
+    target.setHours(h, m, 0, 0);
+    if (target <= now) target.setDate(target.getDate() + 1);
+    const delay = target - now;
+    const openTasks = state.tasks.filter(t => !t.done).length;
+    if (openTasks > 0) {
+      sendNotif(
+        '🎯 Tageserinnerung — Prio',
+        `Du hast ${openTasks} offene Aufgabe${openTasks !== 1 ? 'n' : ''}. Los geht's!`,
+        delay
+      );
+    }
+  }
+}
+
+function initNotifications() {
+  if (!('Notification' in window)) return;
+  const s = getNotifSettings();
+  if (s.enabled && Notification.permission === 'granted') {
+    scheduleNotifications();
+  }
+  updateNotifUI();
+}
+
+init();
+initNotifications();
+</script>
+</body>
+</html>
